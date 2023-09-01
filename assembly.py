@@ -1,0 +1,141 @@
+import websockets
+import asyncio
+import base64
+import json
+from configure import auth_key
+import pyaudio
+import speech_recognition as sr
+import socket
+import time
+from translate import Translator
+
+ 
+FRAMES_PER_BUFFER = 3200
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 16000
+p = pyaudio.PyAudio()
+ 
+# starts recording
+stream = p.open(
+   format=FORMAT,
+   channels=CHANNELS,
+   rate=RATE,
+   input=True,
+   frames_per_buffer=FRAMES_PER_BUFFER
+)
+
+# the AssemblyAI endpoint we're going to hit
+URL = "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000"
+
+# Define target IP and port
+target_ip = "192.168.5.146"
+target_port = 5000
+empty_string_count = 0
+# Function to send text over UDP
+def send_text_over_udp(text):
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        data = text.encode('utf-8')
+        udp_socket.sendto(data, (target_ip, target_port))
+        print(f"Text sent successfully to {target_ip}:{target_port}")
+    except socket.error as e:
+        print(f"Error occurred while sending data: {e}")
+    finally:
+        udp_socket.close()
+
+
+
+async def send_receive():
+   print(f'Connecting websocket to url ${URL}')
+   NumberOfIssues = 0
+   previous_text = "none"
+   async with websockets.connect(
+       URL,
+       extra_headers=(("Authorization", auth_key),),
+       ping_interval=5,
+       ping_timeout=20
+   ) as _ws:
+       await asyncio.sleep(0.1)
+       print("Receiving SessionBegins ...")
+       session_begins = await _ws.recv()
+       print(session_begins)
+       print("Sending messages ...")
+       async def send():
+           while True:
+               try:
+                   data = stream.read(FRAMES_PER_BUFFER)
+                   data = base64.b64encode(data).decode("utf-8")
+                   json_data = json.dumps({"audio_data":str(data)})
+                   
+                   await _ws.send(json_data)
+               except websockets.exceptions.ConnectionClosedError as e:
+                   print(e)
+                   assert e.code == 4008
+                   break
+               except Exception as e:
+                   assert False, "Not a websocket 4008 error"
+               await asyncio.sleep(0.01)
+          
+           return True
+      
+       async def receive(previous_text, NumberOfIssues):
+           while True:
+               try:
+                    result_str = await _ws.recv()
+                    text_received = json.loads(result_str)['text']
+                    print(text_received)
+                    send_text_over_udp("text1:" + text_received)
+                    if(previous_text == text_received):
+                        NumberOfIssues += 1
+                    else:
+                        NumberOfIssues = 0
+
+                    if(NumberOfIssues >3):
+                        print("Done")
+                        send_text_over_udp("text2:EndMessage")
+                        asyncio.run(main())
+                        return 1
+
+                    previous_text = text_received
+
+
+               except websockets.exceptions.ConnectionClosedError as e:
+                   print(e)
+                   assert e.code == 4008
+                   break
+               except Exception as e:
+                   assert False, "Not a websocket 4008 error"
+      
+       send_result, receive_result = await asyncio.gather(send(), receive(previous_text, NumberOfIssues))
+    
+
+async def main():
+    recognizer = sr.Recognizer()
+    microphone = sr.Microphone()
+    recognizer.dynamic_energy_threshold = False
+
+    while True:
+        print("Listening for speech...")
+        with microphone as source:
+            try:
+                audio = recognizer.listen(source, timeout=3)
+                text = recognizer.recognize_google(audio)
+                print("Speech detected:", text)
+                send_text_over_udp("text2:StartMessage")
+                dictation_task = asyncio.create_task(send_receive())
+                await asyncio.sleep(10)  # Let the dictation task run for a specified time
+                dictation_task.cancel()  # Cancel the task if needed
+                await dictation_task  # Wait for the task to complete (optional)
+                send_text_over_udp("text2:EndMessage")
+            except sr.WaitTimeoutError:
+                pass  # No speech detected within the timeout
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+
+
+
+
