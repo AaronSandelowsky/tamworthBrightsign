@@ -10,10 +10,10 @@ import time
 from translate import Translator
 
 
-FRAMES_PER_BUFFER = 3200
+FRAMES_PER_BUFFER = 1000
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 16000
+RATE = 12000
 p = pyaudio.PyAudio()
 
 # starts recording
@@ -40,7 +40,7 @@ def send_text_over_udp(text):
     try:
         data = text.encode('utf-8')
         udp_socket.sendto(data, (target_ip, target_port))
-        print(f"Text sent successfully to {target_ip}:{target_port}")
+        # print(f"Text sent successfully to {target_ip}:{target_port}")
     except socket.error as e:
         print(f"Error occurred while sending data: {e}")
     finally:
@@ -54,7 +54,8 @@ stop_event = asyncio.Event()
 async def send_receive():
     print(f'Connecting websocket to URL {URL}')
     NumberOfIssues = 0
-    previous_text = "none"
+    previous_text = ""
+    text_to_show = " "
 
     async with websockets.connect(
         URL,
@@ -63,10 +64,10 @@ async def send_receive():
         ping_timeout=20
     ) as _ws:
         await asyncio.sleep(0.1)
-        print("Receiving SessionBegins ...")
+        # print("Receiving SessionBegins ...")
         session_begins = await _ws.recv()
-        print(session_begins)
-        print("Sending messages ...")
+        # print(session_begins)
+        print("Start the Announcement ...")
 
         async def send():
             while not stop_event.is_set():  # Continue sending until the event is set
@@ -86,31 +87,39 @@ async def send_receive():
 
             return True
 
-        async def receive(previous_text, NumberOfIssues):
+        async def receive(previous_text, NumberOfIssues,  text_to_show):
             while not stop_event.is_set():  # Continue receiving until the event is set
                 try:
                     result_str = await _ws.recv()
                     text_received = json.loads(result_str)['text']
-                    print(text_received)
-                    send_text_over_udp("text1:" + text_received)
+                    if (len(text_received) == 0):
+                        text_to_show += previous_text
+                        previous_text = ""
+                    message1 = "text1:" + text_to_show + " " + text_received
+                    print("text to show" + text_to_show)
+                    print(("text_received" + text_received))
+                    print(len(text_received));
+                    send_text_over_udp(message1)
                     if (previous_text == text_received):
                         NumberOfIssues += 1
-                        print(NumberOfIssues)
+                        # print(NumberOfIssues)
                     else:
                         NumberOfIssues = 0
 
-                    if (NumberOfIssues > 3):
-                        print("Done")
+                    if (NumberOfIssues > 10):
+                        # print("Done")
+                        time.sleep(3)
+                        send_text_over_udp("text1:       Welcome to Tamworth")
                         send_text_over_udp("text2:EndMessage")
                         NumberOfIssues = 0
-                        print(NumberOfIssues)
+                        # print(NumberOfIssues)
 
                         # Set the event to stop the coroutine
                         stop_event.set()
 
                         return NumberOfIssues
-
-                    previous_text = text_received
+                    if(len(text_received) > 0):
+                        previous_text = text_received
 
                 except websockets.exceptions.ConnectionClosedError as e:
                     print(e)
@@ -120,7 +129,7 @@ async def send_receive():
                     assert False, "Not a websocket 4008 error"
 
         # Start sending and receiving asynchronously
-        await asyncio.gather(send(), receive(previous_text, NumberOfIssues))
+        await asyncio.gather(send(), receive(previous_text, NumberOfIssues, text_to_show))
 
         await asyncio.sleep(5)
 
@@ -132,12 +141,12 @@ def main():
     j = 1
 
     while True:
-        print("Listening for speech...")
+        print("Listening for Sound...")
         with microphone as source:
             try:
                 audio = recognizer.listen(source, timeout=None)
                 text = recognizer.recognize_google(audio)
-                print("Speech detected:", text)
+                # print("Speech detected:", text)
                 send_text_over_udp("text2:StartMessage")
 
                 # Create and run the asyncio event loop
