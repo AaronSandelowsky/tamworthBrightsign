@@ -1,5 +1,5 @@
 import subprocess
-from assembly import *
+import assembly
 
 i = 1
 

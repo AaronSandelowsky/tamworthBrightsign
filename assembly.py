@@ -8,6 +8,7 @@ import speech_recognition as sr
 import socket
 import time
 from translate import Translator
+import numpy as np
 
 
 FRAMES_PER_BUFFER = 3200
@@ -40,7 +41,7 @@ def send_text_over_udp(text):
     try:
         data = text.encode('utf-8')
         udp_socket.sendto(data, (target_ip, target_port))
-        print(f"Text sent successfully to {target_ip}:{target_port}")
+        # print(f"Text sent successfully to {target_ip}:{target_port}")
     except socket.error as e:
         print(f"Error occurred while sending data: {e}")
     finally:
@@ -56,6 +57,7 @@ async def send_receive():
     NumberOfIssues = 0
     previous_text = ""
     savedText = ""
+    evenorodd = 0
     async with websockets.connect(
         URL,
         extra_headers=(("Authorization", auth_key),),
@@ -86,18 +88,30 @@ async def send_receive():
 
             return True
 
-        async def receive(previous_text, savedText,  NumberOfIssues):
+        async def receive(previous_text, savedText,  NumberOfIssues, evenorodd):
             while not stop_event.is_set():  # Continue receiving until the event is set
                 try:
+                    if(evenorodd == 0):
+                        evenorodd = 0
+                    else:
+                        evenorodd = 0
                     result_str = await _ws.recv()
                     text_received = json.loads(result_str)['text']
                     textType = json.loads(result_str)['message_type']
                     confidence = json.loads(result_str)['confidence']
+                    # Add word library
                     print(confidence)
                     print(textType)
                     if(textType == 'FinalTranscript' and NumberOfIssues == 0):
-                        savedText += text_received
-                    
+                        if(text_received  != savedText):
+                            savedText += ' '
+                            savedText += text_received + ' '
+                    elif (len(text_received)  < len(previous_text) - 0.7* len(previous_text) ):
+                        savedText += ' ' + previous_text +' '
+                        NumberOfIssues += 1
+                    #Add holding text feature
+                    # if (len(text_received)  < len(previous_text) - 10):
+                    #     savedText += previous_text
                     
                     if (previous_text == text_received):
                         NumberOfIssues += 1
@@ -105,13 +119,18 @@ async def send_receive():
                     else:
                         NumberOfIssues = 0
 
-                    if (len(text_received)  == 0):
-                        savedText += previous_text
-                    print("text1:" + savedText + text_received)
-                    send_text_over_udp("text1:" + savedText + text_received)
-                    if (NumberOfIssues > 10):
+                    
+                    print("TextSaved:    ", savedText)
+                    print("Previous text:", previous_text)
+                    print("text_received:", text_received)
+                    # print("text1:" + savedText + text_received)
+                    text_to_display =savedText + text_received
+
+                    if(evenorodd == 0):
+                        send_text_over_udp("text1:" + text_to_display)
+                    if (NumberOfIssues > 25):
                         print("Done")
-                        send_text_over_udp("text1:                  Welcome To Tamworth")
+                        send_text_over_udp("text1:                    Welcome To Tamworth")
                         send_text_over_udp("text2:EndMessage")
                         NumberOfIssues = 0
                         print(NumberOfIssues)
@@ -131,7 +150,7 @@ async def send_receive():
                     assert False, "Not a websocket 4008 error"
 
         # Start sending and receiving asynchronously
-        await asyncio.gather(send(), receive(previous_text, savedText, NumberOfIssues))
+        await asyncio.gather(send(), receive(previous_text, savedText, NumberOfIssues, evenorodd))
 
         await asyncio.sleep(5)
 
@@ -141,29 +160,36 @@ def main():
     microphone = sr.Microphone()
     recognizer.dynamic_energy_threshold = False
     j = 1
+    threshold = 0
 
     while True:
         print("Listening for speech...")
         with microphone as source:
             try:
                 audio = recognizer.listen(source, timeout=None)
-                text = recognizer.recognize_google(audio)
-                print("Speech detected:", text)
-                send_text_over_udp("text2:StartMessage")
 
-                # Create and run the asyncio event loop
-                loop = asyncio.get_event_loop()
-                send_receive_task = loop.create_task(send_receive())
+                # Convert audio data to a numpy array for RMS calculation
+                audio_data = np.frombuffer(audio.frame_data, dtype=np.int16)
+        
+                # Calculate the RMS value of the audio data
+                rms = np.sqrt(np.mean(audio_data**2))
+                
+                if(rms > threshold):
+                    send_text_over_udp("text2:StartMessage")
 
-                try:
-                    # Wait for the coroutine to complete
-                    loop.run_until_complete(send_receive_task)
-                    return 0
-                except asyncio.CancelledError:
-                    # Handle task cancellation
-                    print("Task was canceled.")
+                    # Create and run the asyncio event loop
+                    loop = asyncio.get_event_loop()
+                    send_receive_task = loop.create_task(send_receive())
 
-                send_text_over_udp("text2:EndMessage")
+                    try:
+                        # Wait for the coroutine to complete
+                        loop.run_until_complete(send_receive_task)
+                        return 0
+                    except asyncio.CancelledError:
+                        # Handle task cancellation
+                        print("Task was canceled.")
+
+                    send_text_over_udp("text2:EndMessage")
             except sr.WaitTimeoutError:
                 pass  # No speech detected within the timeout
 

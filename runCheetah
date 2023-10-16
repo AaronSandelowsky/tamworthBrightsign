@@ -1,0 +1,25 @@
+import subprocess
+import socket
+
+def send_text_over_udp(text):
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        data = text.encode('utf-8')
+        udp_socket.sendto(data, (target_ip, target_port))
+        # print(f"Text sent successfully to {target_ip}:{target_port}")
+    except socket.error as e:
+        print(f"Error occurred while sending data: {e}")
+    finally:
+        udp_socket.close()
+
+i = 1
+
+while i > 0:
+    print(i)
+    subprocess.run(["python", "cheetah.py"])
+    time.sleep(3)
+    send_text_over_udp("text1:       Welcome to Tamworth")
+    send_text_over_udp("text2:EndMessage")
+
+    i += 1
+
