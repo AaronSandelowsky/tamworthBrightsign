@@ -2,7 +2,6 @@ import websockets
 import asyncio
 import base64
 import json
-from configure import auth_key
 import pyaudio
 import speech_recognition as sr
 import socket
@@ -10,7 +9,7 @@ import time
 from translate import Translator
 import numpy as np
 
-
+auth_key = "b9e4ad0231e14b2ba12eb5276fddcea7"
 FRAMES_PER_BUFFER = 3200
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -106,7 +105,7 @@ async def send_receive():
                         if(text_received  != savedText):
                             savedText += ' '
                             savedText += text_received + ' '
-                    elif (len(text_received)  < len(previous_text) - 0.7* len(previous_text) ):
+                    elif (len(text_received)  < len(previous_text) - 0.75* len(previous_text) ):
                         savedText += ' ' + previous_text +' '
                         NumberOfIssues += 1
                     #Add holding text feature
