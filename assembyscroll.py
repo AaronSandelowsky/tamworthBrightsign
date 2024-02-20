@@ -34,7 +34,7 @@ target_port = 5000
 empty_string_count = 0
 # Function to send text over UDP
 
-def trim_string(input_string, max_length=600, words_to_remove=10):
+def trim_string(input_string, max_length=700, words_to_remove=10):
     words = input_string.split()
 
     while len(' '.join(words)) > max_length:
@@ -67,6 +67,8 @@ async def send_receive():
     previous_text = ""
     savedText = ""
     evenorodd = 0
+    currentTime = time.time()
+    previousFinal = False
     async with websockets.connect(
         URL,
         extra_headers=(("Authorization", auth_key),),
@@ -97,7 +99,7 @@ async def send_receive():
 
             return True
 
-        async def receive(previous_text, savedText,  NumberOfIssues, evenorodd):
+        async def receive(previous_text, savedText,  NumberOfIssues, evenorodd, first_pass, currentTime, previousFinal):
             while not stop_event.is_set():  # Continue receiving until the event is set
                 try:
                     if(evenorodd == 0):
@@ -111,12 +113,20 @@ async def send_receive():
                     # Add word library
                     print(confidence)
                     print(textType)
-                    if(textType == 'FinalTranscript' and NumberOfIssues == 0):
+
+                    if(len(text_received) == 0):
+                        previousFinal = False
+
+                    if textType == 'FinalTranscript':
                         if(text_received  != savedText):
                             savedText += ' '
                             savedText += text_received + ' '
-                    elif (len(text_received)  < len(previous_text) - 0.75* len(previous_text) ):
-                        savedText += ' ' + previous_text +' '
+                            previous_text = text_received
+                            previousFinal = True
+                    elif 0.5*len(previous_text) > len(text_received) and confidence > 0.5 and previousFinal is False
+                       if not first_pass:     
+                            savedText += ' ' + previous_text +' '
+                        first_pass = False
                         NumberOfIssues += 1
                     #Add holding text feature
                     # if (len(text_received)  < len(previous_text) - 10):
@@ -124,10 +134,10 @@ async def send_receive():
                     
                     if (previous_text == text_received):
                         NumberOfIssues += 1
-                        print(NumberOfIssues)
+                        print(time.time() - currentTime)
                     else:
                         NumberOfIssues = 0
-
+                        currentTime = time.time()
                     
                     print("TextSaved:    ", savedText)
                     print("Previous text:", previous_text)
@@ -137,7 +147,7 @@ async def send_receive():
                     text_to_display  = trim_string(text_to_display)
                     if(evenorodd == 0):
                         send_text_over_udp("text1:" + text_to_display)
-                    if (NumberOfIssues > 25):
+                    if (time.timee() - currentTime > 25):
                         print("Done")
                         send_text_over_udp("text1:                    Welcome To Tamworth")
                         send_text_over_udp("text2:EndMessage")
@@ -159,7 +169,7 @@ async def send_receive():
                     assert False, "Not a websocket 4008 error"
 
         # Start sending and receiving asynchronously
-        await asyncio.gather(send(), receive(previous_text, savedText, NumberOfIssues, evenorodd))
+        await asyncio.gather(send(), receive(previous_text, savedText, NumberOfIssues, evenorodd, first_pass, currentTime, previousFinal))
 
         await asyncio.sleep(5)
 
@@ -170,7 +180,8 @@ def main():
     recognizer.dynamic_energy_threshold = False
     j = 1
     threshold = 0
-
+    first_pass = True
+    time1 = time.time()
     while True:
         print("Listening for speech...")
         with microphone as source:
