@@ -7,6 +7,5 @@ i = 1
 
 while i > 0:
     print(i)
-    
-    subprocess.run(["assembly"])
+    subprocess.run(["python", "assembyscroll.py"])
     i += 1

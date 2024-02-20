@@ -61,7 +61,7 @@ def send_text_over_udp(text):
 stop_event = asyncio.Event()
 
 
-async def send_receive():
+async def send_receive(first_pass):
     print(f'Connecting websocket to URL {URL}')
     NumberOfIssues = 0
     previous_text = ""
@@ -123,8 +123,8 @@ async def send_receive():
                             savedText += text_received + ' '
                             previous_text = text_received
                             previousFinal = True
-                    elif 0.5*len(previous_text) > len(text_received) and confidence > 0.5 and previousFinal is False
-                       if not first_pass:     
+                    elif 0.5*len(previous_text) > len(text_received) and confidence > 0.5 and previousFinal is False:
+                        if not first_pass:     
                             savedText += ' ' + previous_text +' '
                         first_pass = False
                         NumberOfIssues += 1
@@ -147,7 +147,7 @@ async def send_receive():
                     text_to_display  = trim_string(text_to_display)
                     if(evenorodd == 0):
                         send_text_over_udp("text1:" + text_to_display)
-                    if (time.timee() - currentTime > 25):
+                    if (time.time() - currentTime > 25):
                         print("Done")
                         send_text_over_udp("text1:                    Welcome To Tamworth")
                         send_text_over_udp("text2:EndMessage")
@@ -199,7 +199,7 @@ def main():
 
                     # Create and run the asyncio event loop
                     loop = asyncio.get_event_loop()
-                    send_receive_task = loop.create_task(send_receive())
+                    send_receive_task = loop.create_task(send_receive(first_pass))
 
                     try:
                         # Wait for the coroutine to complete
